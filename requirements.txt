@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+requests
+aiohttp
+beautifulsoup4
+names
+random_address
+fake_useragent
+pydantic
