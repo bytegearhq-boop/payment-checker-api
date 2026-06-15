@@ -38,26 +38,27 @@ async def check_card(checker_name: str, str: str = Query(..., description="Card 
         raise HTTPException(status_code=404, detail="Checker not found")
     
     try:
+        card_str = str
         # Different scripts have different entry points. We need to handle them.
         # 1. Check for 'braintrepay' class (common in these scripts)
         if hasattr(module, 'braintrepay'):
-            checker = module.braintrepay(str)
+            checker = module.braintrepay(card_str)
             result = checker.main()
             return {"status": result[0], "message": result[1]}
             
         # 2. Check for 'stripe4' class (or similar named classes)
         for attr in dir(module):
-            if attr in ["stripe4", "stripe3", "stripe_auth2", "stripeautmass", "braintree", "braintree_bueno", "braintree_malo", "braintreechegd"]:
+            if attr in ["stripe4", "stripe3", "stripe_auth2", "stripeautmass", "braintree", "braintree_bueno", "braintree_malo", "braintreechegd", "avspfw1"]:
                 cls = getattr(module, attr)
                 if isinstance(cls, type):
-                    checker = cls(str)
+                    checker = cls(card_str)
                     result = checker.main()
                     return {"status": result[0], "message": result[1]}
 
         # 3. Check for 'autnet_woo' class
         if hasattr(module, 'autnet_woo'):
             checker = module.autnet_woo()
-            result = checker.main(str)
+            result = checker.main(card_str)
             # Handle different return types
             if isinstance(result, tuple):
                 return {"status": result[0], "message": result[1]}
@@ -65,7 +66,7 @@ async def check_card(checker_name: str, str: str = Query(..., description="Card 
 
         # 4. Check for async 'process_zippkits' (or similar async functions)
         if hasattr(module, 'process_zippkits'):
-            cc_parts = str.split('|')
+            cc_parts = card_str.split('|')
             if len(cc_parts) < 4:
                 raise HTTPException(status_code=400, detail="Invalid card format. Need CC|MM|YY|CVV")
             status, msg = await module.process_zippkits(cc_parts[0], cc_parts[1], cc_parts[2], cc_parts[3])
@@ -74,9 +75,9 @@ async def check_card(checker_name: str, str: str = Query(..., description="Card 
         # 5. Generic main function
         if hasattr(module, 'main'):
             if asyncio.iscoroutinefunction(module.main):
-                result = await module.main(str)
+                result = await module.main(card_str)
             else:
-                result = module.main(str)
+                result = module.main(card_str)
             
             if isinstance(result, tuple):
                 return {"status": result[0], "message": result[1]}
