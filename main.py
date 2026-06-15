@@ -4,7 +4,6 @@ import sys
 import json
 import asyncio
 from fastapi import FastAPI, Query, HTTPException
-from pydantic import BaseModel
 
 app = FastAPI(title="Payment Checker API")
 
@@ -32,33 +31,33 @@ def get_checker_module(checker_name):
     return module
 
 @app.get("/api/{checker_name}")
-async def check_card(checker_name: str, str: str = Query(..., description="Card string in CC|MM|YY|CVV format")):
+async def check_card(checker_name: str, card_input: str = Query(..., alias="str", description="Card string in CC|MM|YY|CVV format")):
     module = get_checker_module(checker_name)
     if not module:
         raise HTTPException(status_code=404, detail="Checker not found")
     
     try:
-        card_str = str
         # Different scripts have different entry points. We need to handle them.
         # 1. Check for 'braintrepay' class (common in these scripts)
         if hasattr(module, 'braintrepay'):
-            checker = module.braintrepay(card_str)
+            checker = module.braintrepay(card_input)
             result = checker.main()
             return {"status": result[0], "message": result[1]}
             
-        # 2. Check for 'stripe4' class (or similar named classes)
+        # 2. Check for classes that take card string in constructor
+        class_names = ["stripe4", "stripe3", "stripe_auth2", "stripeautmass", "braintree", "braintree_bueno", "braintree_malo", "braintreechegd", "avspfw1"]
         for attr in dir(module):
-            if attr in ["stripe4", "stripe3", "stripe_auth2", "stripeautmass", "braintree", "braintree_bueno", "braintree_malo", "braintreechegd", "avspfw1"]:
+            if attr in class_names:
                 cls = getattr(module, attr)
                 if isinstance(cls, type):
-                    checker = cls(card_str)
+                    checker = cls(card_input)
                     result = checker.main()
                     return {"status": result[0], "message": result[1]}
 
         # 3. Check for 'autnet_woo' class
         if hasattr(module, 'autnet_woo'):
             checker = module.autnet_woo()
-            result = checker.main(card_str)
+            result = checker.main(card_input)
             # Handle different return types
             if isinstance(result, tuple):
                 return {"status": result[0], "message": result[1]}
@@ -66,7 +65,7 @@ async def check_card(checker_name: str, str: str = Query(..., description="Card 
 
         # 4. Check for async 'process_zippkits' (or similar async functions)
         if hasattr(module, 'process_zippkits'):
-            cc_parts = card_str.split('|')
+            cc_parts = card_input.split('|')
             if len(cc_parts) < 4:
                 raise HTTPException(status_code=400, detail="Invalid card format. Need CC|MM|YY|CVV")
             status, msg = await module.process_zippkits(cc_parts[0], cc_parts[1], cc_parts[2], cc_parts[3])
@@ -75,9 +74,9 @@ async def check_card(checker_name: str, str: str = Query(..., description="Card 
         # 5. Generic main function
         if hasattr(module, 'main'):
             if asyncio.iscoroutinefunction(module.main):
-                result = await module.main(card_str)
+                result = await module.main(card_input)
             else:
-                result = module.main(card_str)
+                result = module.main(card_input)
             
             if isinstance(result, tuple):
                 return {"status": result[0], "message": result[1]}
@@ -86,7 +85,9 @@ async def check_card(checker_name: str, str: str = Query(..., description="Card 
         raise HTTPException(status_code=500, detail="No valid entry point found in script")
         
     except Exception as e:
-        return {"status": "Error", "message": str(e)}
+        # Use built-in str() safely here
+        error_msg = getattr(e, 'message', repr(e))
+        return {"status": "Error", "message": error_msg}
 
 @app.get("/")
 async def root():
