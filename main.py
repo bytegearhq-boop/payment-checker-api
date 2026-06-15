@@ -37,15 +37,20 @@ async def check_card(checker_name: str, card_input: str = Query(..., alias="str"
         raise HTTPException(status_code=404, detail="Checker not found")
     
     try:
-        # Different scripts have different entry points. We need to handle them.
-        # 1. Check for 'braintrepay' class (common in these scripts)
+        # 1. Special case for avspfw1 (it doesn't take args in __init__)
+        if hasattr(module, 'avspfw1'):
+            checker = module.avspfw1()
+            result = checker.main(card_input)
+            return {"status": result[0], "message": result[1]}
+
+        # 2. Check for 'braintrepay' class (common in these scripts)
         if hasattr(module, 'braintrepay'):
             checker = module.braintrepay(card_input)
             result = checker.main()
             return {"status": result[0], "message": result[1]}
             
-        # 2. Check for classes that take card string in constructor
-        class_names = ["stripe4", "stripe3", "stripe_auth2", "stripeautmass", "braintree", "braintree_bueno", "braintree_malo", "braintreechegd", "avspfw1"]
+        # 3. Check for other classes that take card string in constructor
+        class_names = ["stripe4", "stripe3", "stripe_auth2", "stripeautmass", "braintree", "braintree_bueno", "braintree_malo", "braintreechegd"]
         for attr in dir(module):
             if attr in class_names:
                 cls = getattr(module, attr)
@@ -54,7 +59,7 @@ async def check_card(checker_name: str, card_input: str = Query(..., alias="str"
                     result = checker.main()
                     return {"status": result[0], "message": result[1]}
 
-        # 3. Check for 'autnet_woo' class
+        # 4. Check for 'autnet_woo' class
         if hasattr(module, 'autnet_woo'):
             checker = module.autnet_woo()
             result = checker.main(card_input)
@@ -63,7 +68,7 @@ async def check_card(checker_name: str, card_input: str = Query(..., alias="str"
                 return {"status": result[0], "message": result[1]}
             return {"result": result}
 
-        # 4. Check for async 'process_zippkits' (or similar async functions)
+        # 5. Check for async 'process_zippkits' (or similar async functions)
         if hasattr(module, 'process_zippkits'):
             cc_parts = card_input.split('|')
             if len(cc_parts) < 4:
@@ -71,7 +76,7 @@ async def check_card(checker_name: str, card_input: str = Query(..., alias="str"
             status, msg = await module.process_zippkits(cc_parts[0], cc_parts[1], cc_parts[2], cc_parts[3])
             return {"status": status, "message": msg}
 
-        # 5. Generic main function
+        # 6. Generic main function
         if hasattr(module, 'main'):
             if asyncio.iscoroutinefunction(module.main):
                 result = await module.main(card_input)
@@ -85,7 +90,6 @@ async def check_card(checker_name: str, card_input: str = Query(..., alias="str"
         raise HTTPException(status_code=500, detail="No valid entry point found in script")
         
     except Exception as e:
-        # Use built-in str() safely here
         error_msg = getattr(e, 'message', repr(e))
         return {"status": "Error", "message": error_msg}
 
