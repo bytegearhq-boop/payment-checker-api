@@ -52,7 +52,7 @@ def run_checker_sync(checker_name, card_input):
             return {"status": result[0], "message": result[1]}
             
         # 3. Check for other classes
-        class_names = ["stripe4", "stripe3", "stripe_auth2", "stripeautmass", "braintree", "braintree_bueno", "braintree_malo", "braintreechegd", "payflowchgr", "payflow_pro", "otropayflow", "paypal1", "avspfw"]
+        class_names = ["stripe4", "stripe3", "stripe_auth2", "stripeautmass", "braintree", "braintree_bueno", "braintree_malo", "braintreechegd", "payflowchgr", "payflow_pro", "otropayflow", "paypal1", "avspfw", "sdcorps_checker"]
         for attr in dir(module):
             if attr in class_names:
                 cls = getattr(module, attr)
