@@ -14,5 +14,6 @@
     "braintree": "pasted_file_uS5oBq_braintree.py",
     "braintree_bueno": "pasted_file_kfKVch_braintree_bueno.py",
     "braintree_malo": "pasted_file_svzoou_braintree_malo.py",
-    "sdcorps": "sdcorps_checker.py"
+    "sdcorps": "sdcorps_checker.py",
+    "paypal_jungle": "paypal_jungle_checker.py"
 }
