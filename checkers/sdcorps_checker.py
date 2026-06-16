@@ -31,7 +31,7 @@ def solve_captcha(site_key, site_url, invisible=True):
             "invisible": 1,
             "json": 1
         }
-        print(f"Submitting task to CaptchaAI OCR (Invisible: {invisible})...")
+        print(f"Submitting task to CaptchaAI OCR (Invisible: 1)...")
         res = requests.post(in_url, data=data, timeout=30)
         resp = res.json()
         
@@ -140,7 +140,7 @@ class sdcorps_checker:
             # 3. Solve Captcha (Invisible support)
             site_key = paserX(resp, 'data-sitekey="', '"') or "6Le8uk8UAAAAAKmSdQU9NjX37lzlRdkZVvaa43nY"
             is_invisible = 'invisible' in resp.lower() or 'data-size="invisible"' in resp.lower()
-            cap = solve_captcha(site_key, 'https://sdcorps.org/campaigns/support/', invisible=is_invisible)
+            cap = solve_captcha(site_key, 'https://sdcorps.org/campaigns/support/', invisible=True)
             if not cap:
                 return "Error", "Captcha bypass failed"
 
