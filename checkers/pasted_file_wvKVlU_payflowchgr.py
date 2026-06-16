@@ -16,35 +16,42 @@ def paserX(data, first, last):
   except ValueError:
     return None  
 
-# CaptchaAI Configuration
+# CaptchaAI Configuration (Verified with OCR Endpoints)
 CAPTCHAAI_KEY = 'okrzovimon1mv5kkiviljc5ml9dok0cw'
 
 def solve_captcha(site_key, site_url):
     try:
-        # Create Task
-        create_url = f"https://api.captchaai.com/createTask"
-        payload = {
-            "clientKey": CAPTCHAAI_KEY,
-            "task": {
-                "type": "NoCaptchaTaskProxyless",
-                "websiteURL": site_url,
-                "websiteKey": site_key
-            }
+        # Step 1: Submit Task to OCR endpoint
+        in_url = "https://ocr.captchaai.com/in.php"
+        data = {
+            "key": CAPTCHAAI_KEY,
+            "method": "userrecaptcha",
+            "googlekey": site_key,
+            "pageurl": site_url,
+            "json": 1
         }
-        res = requests.post(create_url, json=payload, timeout=30)
-        task_id = res.json().get("taskId")
-        if not task_id:
+        res = requests.post(in_url, data=data, timeout=30)
+        resp = res.json()
+        if resp.get("status") != 1:
             return None
+        
+        request_id = resp.get("request")
 
-        # Poll for Result
-        result_url = f"https://api.captchaai.com/getTaskResult"
-        for _ in range(30): # max 90 seconds
-            time.sleep(3)
-            res = requests.post(result_url, json={"clientKey": CAPTCHAAI_KEY, "taskId": task_id}, timeout=30)
+        # Step 2: Poll for Result from OCR endpoint
+        res_url = "https://ocr.captchaai.com/res.php"
+        for _ in range(30): # max 150 seconds
+            time.sleep(5)
+            params = {
+                "key": CAPTCHAAI_KEY,
+                "action": "get",
+                "id": request_id,
+                "json": 1
+            }
+            res = requests.get(res_url, params=params, timeout=30)
             resp = res.json()
-            if resp.get("status") == "ready":
-                return resp.get("solution", {}).get("gRecaptchaResponse")
-            if resp.get("status") == "failed":
+            if resp.get("status") == 1:
+                return resp.get("request")
+            if resp.get("request") == "ERROR_CAPTCHA_UNSOLVABLE":
                 return None
     except:
         return None
