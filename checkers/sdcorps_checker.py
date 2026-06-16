@@ -19,10 +19,61 @@ def paserX(data, first, last):
 # CaptchaAI Configuration
 CAPTCHAAI_KEY = 'okrzovimon1mv5kkiviljc5ml9dok0cw'
 
-def solve_captcha(site_key, site_url, invisible=True):
+def solve_captcha(site_key, site_url):
     try:
-        # Step 1: Submit Task using Task API (more robust for invisible)
-        # Using both normal and invisible docs
+        # Step 1: Create Task using api.captchaai.com (API V1)
+        create_url = "https://api.captchaai.com/createTask"
+        payload = {
+            "clientKey": CAPTCHAAI_KEY,
+            "task": {
+                "type": "NoCaptchaTaskProxyless",
+                "websiteURL": site_url,
+                "websiteKey": site_key,
+                "isInvisible": True
+            }
+        }
+        print("Creating task on CaptchaAI (API V1)...")
+        res = requests.post(create_url, json=payload, timeout=30)
+        resp = res.json()
+        
+        if resp.get("errorId") != 0:
+            print(f"Task Creation Error: {resp.get('errorDescription')}")
+            # Fallback to OCR if V1 fails
+            return solve_captcha_ocr(site_key, site_url)
+        
+        task_id = resp.get("taskId")
+        print(f"Task Created. ID: {task_id}. Polling for result...")
+
+        # Step 2: Get Result
+        result_url = "https://api.captchaai.com/getTaskResult"
+        result_payload = {
+            "clientKey": CAPTCHAAI_KEY,
+            "taskId": task_id
+        }
+        
+        for i in range(60):
+            time.sleep(5)
+            res = requests.post(result_url, json=result_payload, timeout=30)
+            resp = res.json()
+            
+            if resp.get("status") == "ready":
+                token = resp.get("solution", {}).get("gRecaptchaResponse")
+                print("Captcha Solved Successfully!")
+                return token
+            
+            if resp.get("errorId") != 0:
+                print(f"Error: {resp.get('errorDescription')}")
+                return None
+                
+            print(f"Attempt {i+1}: Status = {resp.get('status')}")
+            
+    except Exception as e:
+        print(f"Captcha solving exception: {e}")
+        return None
+    return None
+
+def solve_captcha_ocr(site_key, site_url):
+    try:
         in_url = "https://ocr.captchaai.com/in.php"
         data = {
             "key": CAPTCHAAI_KEY,
@@ -32,49 +83,25 @@ def solve_captcha(site_key, site_url, invisible=True):
             "invisible": 1,
             "json": 1
         }
-        print(f"Submitting task to CaptchaAI OCR (Invisible: {invisible})...")
+        print("Falling back to CaptchaAI OCR...")
         res = requests.post(in_url, data=data, timeout=30)
         resp = res.json()
-        
-        if resp.get("status") != 1:
-            print(f"Task Creation Error: {resp.get('request')}")
-            return None
-        
-        request_id = resp.get("request")
-        print(f"Task Created. ID: {request_id}. Polling for result...")
-
-        # Step 2: Get Result
-        res_url = "https://ocr.captchaai.com/res.php"
-        for i in range(60):
-            time.sleep(5)
-            params = {
-                "key": CAPTCHAAI_KEY,
-                "action": "get",
-                "id": request_id,
-                "json": 1
-            }
-            res = requests.get(res_url, params=params, timeout=30)
-            resp = res.json()
-            
-            if resp.get("status") == 1:
-                token = resp.get("request")
-                print("Captcha Solved Successfully!")
-                return token
-            
-            if resp.get("request") == "ERROR_CAPTCHA_UNSOLVABLE":
-                print("Error: Captcha Unsolvable")
-                return None
-                
-            print(f"Attempt {i+1}: Status = {resp.get('request')}")
-            
-    except Exception as e:
-        print(f"Captcha solving exception: {e}")
-        return None
+        if resp.get("status") == 1:
+            request_id = resp.get("request")
+            res_url = "https://ocr.captchaai.com/res.php"
+            for _ in range(40):
+                time.sleep(5)
+                params = {"key": CAPTCHAAI_KEY, "action": "get", "id": request_id, "json": 1}
+                res = requests.get(res_url, params=params, timeout=30)
+                resp = res.json()
+                if resp.get("status") == 1:
+                    return resp.get("request")
+    except:
+        pass
     return None
 
 def solve_math(text):
     try:
-        # Improved math solver to handle multiple formats
         match = re.search(r'(\d+)\s*([\+\-\*\/])\s*(\d+)', text)
         if match:
             num1 = int(match.group(1))
@@ -141,11 +168,9 @@ class sdcorps_checker:
             except:
                 bearer = token
 
-            # 3. Solve Captcha (Trying normal first, then invisible)
+            # 3. Solve Captcha (API V1 with Invisible support)
             site_key = paserX(resp, 'data-sitekey="', '"') or "6Le8uk8UAAAAAKmSdQU9NjX37lzlRdkZVvaa43nY"
-            
-            # Solve Invisible Captcha
-            cap = solve_captcha(site_key, 'https://sdcorps.org/campaigns/support/', invisible=True)
+            cap = solve_captcha(site_key, 'https://sdcorps.org/campaigns/support/')
             
             if not cap:
                 return "Error", "Captcha bypass failed"
