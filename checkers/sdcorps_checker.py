@@ -123,14 +123,20 @@ class sdcorps_checker:
             print(f"Math Result: {math_result}")
 
             # 2. Get Braintree Client Token
-            token_match = re.search(r'"client_token":"([^"]+)"', resp)
+            token_match = re.search(r'client_token":"([^"]+)"', resp)
+            if not token_match:
+                token_match = re.search(r'"client_token":"([^"]+)"', resp)
             if not token_match:
                 token_match = re.search(r"authorization:\s*'([^']+)'", resp)
             
             if not token_match:
+                # Try to find anywhere in the page
+                token_match = re.search(r'client_token":"([^"]+)"', resp)
+            
+            if not token_match:
                 return "Error", "Braintree client token not found"
             
-            token = token_match.group(1)
+            token = token_match.group(1).replace('\\', '')
             try:
                 decode = base64.b64decode(token).decode("utf-8")
                 bearer = json.loads(decode).get('authorizationFingerprint')
